@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>騎士長征 Knight's Tour</title>
+    <title>騎士長征 Knight's Tour — 自由模式</title>
     <style>
         * {
             box-sizing: border-box;
@@ -54,8 +54,28 @@
             padding: 8px;
             border-radius: 14px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 2px #f0c04044;
-            margin-bottom: 18px;
+            margin-bottom: 12px;
             display: none;
+        }
+        /* Placement phase: highlight all unvisited cells */
+        .board.placing-phase .cell:not(.visited):hover {
+            background-color: #f0c040 !important;
+            transform: scale(1.08);
+            cursor: crosshair;
+        }
+        .place-hint {
+            display: none;
+            color: #f0c040;
+            font-size: 0.95em;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+            animation: blink 1.2s ease infinite alternate;
+        }
+        @keyframes blink {
+            from { opacity: 1; }
+            to { opacity: 0.45; }
         }
         .cell {
             width: 62px;
@@ -308,12 +328,13 @@
 </head>
 <body>
     <h1>♞ 騎士長征</h1>
-    <p class="subtitle">Knight's Tour — 限時挑戰</p>
+    <p class="subtitle">Knight's Tour — 自由放置模式</p>
     <div class="button-container">
         <button class="btn btn-primary" onclick="showGuide()">🎮 開始遊戲</button>
     </div>
     <div class="game-container">
         <div class="board-wrapper">
+            <div class="place-hint" id="placeHint">👆 請點擊任意格子放置騎士（含邊界）</div>
             <div class="board" id="board"></div>
         </div>
         <div class="info-panel" id="infoPanel" style="display:none;">
@@ -332,6 +353,10 @@
                     <div class="timer-bar-inner" id="timerBar"></div>
                 </div>
             </div>
+            <div class="info-card" style="font-size:0.85em;color:#a0b4c8;padding:12px 16px;">
+                <div style="color:#f0c04088;margin-bottom:4px;">📌 自由放置模式</div>
+                可放置在棋盤任意位置（包含邊界格）
+            </div>
         </div>
     </div>
 
@@ -340,12 +365,13 @@
     <div class="modal" id="modal">
         <div class="modal-content">
             <h2>♞ 遊戲指南</h2>
-            <p>歡迎來到騎士長征！</p>
+            <p>歡迎來到騎士長征（自由放置模式）！</p>
             <p>請輸入你的名字：</p>
             <input type="text" id="playerName" placeholder="你的名字" maxlength="20">
             <p style="margin-top:14px;">遊戲規則：</p>
             <ol>
-                <li>遊戲開始後，騎士會隨機放置在棋盤上。</li>
+                <li>遊戲開始後，<strong style="color:#f0c040;">點擊棋盤任意格子</strong>（包含邊界）放置騎士。</li>
+                <li>計時從你放置騎士後開始。</li>
                 <li>點擊<span style="color:#5bc8f5;">藍色高亮</span>格子移動騎士。</li>
                 <li>騎士只能按照「日」字形移動。</li>
                 <li>目標是在 30 秒內讓騎士走遍最多格子。</li>
@@ -383,11 +409,13 @@
         const playerNameInput = document.getElementById('playerName');
         const infoPanel = document.getElementById('infoPanel');
         const playerDisplay = document.getElementById('playerDisplay');
+        const placeHint = document.getElementById('placeHint');
 
         let board = [];
         let knightPosition = null;
         let moveCount = 0;
         let gameStarted = false;
+        let waitingForPlacement = false;
         let timeLeft = totalTime;
         let timerInterval = null;
         let playerName = '';
@@ -405,10 +433,15 @@
                 for (let col = 0; col < boardSize; col++) {
                     const cell = document.createElement('div');
                     cell.classList.add('cell');
-                    // Alternating chess pattern
                     cell.classList.add((row + col) % 2 === 0 ? 'light' : 'dark');
                     cell.addEventListener('click', () => {
-                        if (gameStarted && !gameEnded) moveKnight(row, col);
+                        if (gameEnded) return;
+                        if (waitingForPlacement) {
+                            // User places knight anywhere on the board
+                            placeKnight(row, col);
+                        } else if (gameStarted) {
+                            moveKnight(row, col);
+                        }
                     });
                     boardElement.appendChild(cell);
                     board[row][col] = { visited: false, element: cell };
@@ -418,6 +451,7 @@
             moveCount = 0;
             gameEnded = false;
             gameStarted = false;
+            waitingForPlacement = false;
             moveCounterEl.textContent = '0';
         }
 
@@ -444,53 +478,64 @@
             playerNameInput.style.borderColor = '';
             modal.style.display = 'none';
             overlay.style.display = 'none';
-            initializeBoard();
             infoPanel.style.display = 'flex';
             playerDisplay.textContent = playerName;
+            gameEnded = false;
+            initializeBoard();
             boardElement.style.display = 'grid';
-            gameStarted = true;
-            placeKnightRandomly();
-            startTimer();
+
+            // Enter placement phase: user clicks anywhere to place knight
+            waitingForPlacement = true;
+            boardElement.classList.add('placing-phase');
+            placeHint.style.display = 'block';
         }
 
-        function placeKnightRandomly() {
-            const row = Math.floor(Math.random() * boardSize);
-            const col = Math.floor(Math.random() * boardSize);
-            moveKnight(row, col);
+        function placeKnight(row, col) {
+            // Place the knight at the chosen cell (including boundary)
+            waitingForPlacement = false;
+            boardElement.classList.remove('placing-phase');
+            placeHint.style.display = 'none';
+
+            knightPosition = { row, col };
+            board[row][col].visited = true;
+            board[row][col].element.classList.add('visited', 'current');
+            board[row][col].element.innerHTML = `<img src="${knightImage}" alt="騎士">`;
+            board[row][col].element.classList.add('pop');
+            moveCount++;
+            moveCounterEl.textContent = moveCount;
+            highlightValidMoves(row, col);
+
+            // Start game and timer after placement
+            gameStarted = true;
+            startTimer();
+
+            if (!hasValidMoves(row, col)) {
+                endGame('stuck');
+            }
         }
 
         function moveKnight(row, col) {
-            if (knightPosition === null) {
-                knightPosition = { row, col };
-                board[row][col].visited = true;
-                board[row][col].element.classList.add('visited', 'current');
-                board[row][col].element.innerHTML = `<img src="${knightImage}" alt="騎士">`;
-                board[row][col].element.classList.add('pop');
-                moveCount++;
-                moveCounterEl.textContent = moveCount;
-                highlightValidMoves(row, col);
-            } else {
-                const currentRow = knightPosition.row;
-                const currentCol = knightPosition.col;
-                const rowDiff = Math.abs(row - currentRow);
-                const colDiff = Math.abs(col - currentCol);
+            if (knightPosition === null) return;
+            const currentRow = knightPosition.row;
+            const currentCol = knightPosition.col;
+            const rowDiff = Math.abs(row - currentRow);
+            const colDiff = Math.abs(col - currentCol);
 
-                if ((rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2)) {
-                    if (!board[row][col].visited) {
-                        board[currentRow][currentCol].element.classList.remove('current');
-                        board[currentRow][currentCol].element.innerHTML = visitedImage;
-                        knightPosition = { row, col };
-                        board[row][col].visited = true;
-                        board[row][col].element.classList.add('visited', 'current');
-                        board[row][col].element.innerHTML = `<img src="${knightImage}" alt="騎士">`;
-                        board[row][col].element.classList.add('pop');
-                        moveCount++;
-                        moveCounterEl.textContent = moveCount;
-                        highlightValidMoves(row, col);
+            if ((rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2)) {
+                if (!board[row][col].visited) {
+                    board[currentRow][currentCol].element.classList.remove('current');
+                    board[currentRow][currentCol].element.innerHTML = visitedImage;
+                    knightPosition = { row, col };
+                    board[row][col].visited = true;
+                    board[row][col].element.classList.add('visited', 'current');
+                    board[row][col].element.innerHTML = `<img src="${knightImage}" alt="騎士">`;
+                    board[row][col].element.classList.add('pop');
+                    moveCount++;
+                    moveCounterEl.textContent = moveCount;
+                    highlightValidMoves(row, col);
 
-                        if (!hasValidMoves(row, col)) {
-                            endGame('stuck');
-                        }
+                    if (!hasValidMoves(row, col)) {
+                        endGame('stuck');
                     }
                 }
             }
@@ -558,11 +603,14 @@
             if (gameEnded) return;
             gameEnded = true;
             gameStarted = false;
+            waitingForPlacement = false;
             if (timerInterval) {
                 clearInterval(timerInterval);
                 timerInterval = null;
             }
             clearValidMoves();
+            placeHint.style.display = 'none';
+            boardElement.classList.remove('placing-phase');
 
             const msg = reason === 'timeout'
                 ? `⏱️ ${playerName}，時間到！`
@@ -578,11 +626,13 @@
             endOverlay.style.display = 'none';
             initializeBoard();
             boardElement.style.display = 'grid';
-            gameStarted = true;
             gameEnded = false;
             playerDisplay.textContent = playerName;
-            placeKnightRandomly();
-            startTimer();
+
+            // Re-enter placement phase
+            waitingForPlacement = true;
+            boardElement.classList.add('placing-phase');
+            placeHint.style.display = 'block';
         }
 
         initializeBoard();
